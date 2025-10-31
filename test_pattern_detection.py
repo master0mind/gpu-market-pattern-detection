@@ -27,7 +27,9 @@ def test_pattern_detection(csv_file):
         print("✅ Model loaded successfully!")
     except Exception as e:
         print(f"❌ Error loading model: {e}")
-        return    # Load and process your data
+        return
+
+    # Load and process your data
     print(f"\n📊 Loading data from: {csv_file}")
     df = pd.read_csv(csv_file)
     
@@ -42,7 +44,8 @@ def test_pattern_detection(csv_file):
     print(f"Data shape: {df.shape}")
     print(f"Date range: {df['DateTime'].iloc[0]} to {df['DateTime'].iloc[-1]}")
     print(f"Price range: ${df['Close'].min():.2f} - ${df['Close'].max():.2f}")
-      # Create features and get predictions
+
+    # Create features and get predictions
     print("\n🔧 Creating technical features...")
     df_features = detector.create_technical_features(df)
     

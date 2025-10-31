@@ -81,11 +81,14 @@ def timeseries_analysis(request):
                     'error': 'No CSV data provided in the request',
                     'status': 'error'
                 }), 400
-                
+
             df = parse_csv_data(csv_content)
-          # Extract other parameters from request
+
+        # Extract other parameters from request
         request_args = request.args if hasattr(request, 'args') else {}
-        request_json = request.get_json(silent=True) or {}        # Get parameters from either query params or JSON body
+        request_json = request.get_json(silent=True) or {}
+
+        # Get parameters from either query params or JSON body
         model_type = request_args.get('model_type') or request_json.get('model_type', 'arima')
         
         # Handle forecast_periods as string or int
@@ -105,10 +108,11 @@ def timeseries_analysis(request):
             }), 400
         
         logger.info(f"Processing {len(df)} records with model: {model_type}, target: {target_column}")
-        
+
         # Use DateTime as index and sort
         df = df.sort_values('DateTime')
-          # Perform the analysis based on the requested model type
+
+        # Perform the analysis based on the requested model type
         if model_type.lower() == 'arima':
             result = perform_arima_analysis(df, forecast_periods, target_column)
         elif model_type.lower() == 'exponential_smoothing':
@@ -195,7 +199,8 @@ def perform_arima_analysis(df, forecast_periods, target_column):
     try:
         forecast_obj = model_fit.get_forecast(steps=forecast_periods)
         conf_int = forecast_obj.conf_int()
-          # Add confidence intervals to forecast data - round to nearest 0.25 increment
+
+        # Add confidence intervals to forecast data - round to nearest 0.25 increment
         for i, entry in enumerate(forecast_data):
             entry['lower_ci'] = round(round(float(conf_int.iloc[i, 0]) * 4) / 4, 2)
             entry['upper_ci'] = round(round(float(conf_int.iloc[i, 1]) * 4) / 4, 2)
@@ -258,7 +263,9 @@ def perform_exponential_smoothing(df, forecast_periods, target_column):
         model = sm.tsa.SimpleExpSmoothing(ts)
         model_fit = model.fit()
         seasonal_type = None
-        trend_type = None      # Generate forecast
+        trend_type = None
+
+    # Generate forecast
     forecast = model_fit.forecast(steps=forecast_periods)
     
     # Create forecast dates (continuing from last date in the dataset with 5-minute intervals)

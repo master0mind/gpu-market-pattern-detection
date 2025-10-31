@@ -22,7 +22,8 @@ def simulate_real_time_monitoring(csv_file, update_interval=5):
     detector = MarketPatternDetector()
     detector.load_model('market_pattern_model.pth')
     print("✅ Pattern detection model loaded")
-      # Load your market data
+
+    # Load your market data
     df = pd.read_csv(csv_file)
     
     # Keep only the required columns to match training data

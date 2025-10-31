@@ -111,7 +111,8 @@ class MarketPatternDetector:
         data['bb_lower'] = bb.bollinger_lband()
         data['bb_middle'] = bb.bollinger_mavg()
         data['bb_position'] = (data['Close'] - data['bb_lower']) / (data['bb_upper'] - data['bb_lower'])
-          # Volume indicators
+
+        # Volume indicators
         data['volume_sma'] = data['Volume(from bar)'].rolling(window=10).mean()
         data['volume_ratio'] = data['Volume(from bar)'] / (data['volume_sma'] + 1e-8)
         
@@ -176,7 +177,7 @@ class MarketPatternDetector:
         feature_cols = [col for col in data.columns if col not in exclude_cols and data[col].dtype in ['float64', 'int64']]
         
         # Handle missing values
-        data_clean = data[feature_cols].fillna(method='ffill').fillna(0)
+        data_clean = data[feature_cols].ffill().fillna(0)
         
         # Store feature columns for later use
         self.feature_columns = feature_cols
@@ -288,77 +289,6 @@ class MarketPatternDetector:
         
         # Save final model
         self.save_model('market_pattern_model.pth')
-        logger.info(f"Training completed! Best accuracy: {best_acc:.4f}")
-        return train_losses, test_accs
-    
-    def train_model_with_data(self, df_features, labels, epochs=100, batch_size=32, lr=0.001):
-        """
-        Train the pattern detection model with prepared data
-        """
-        # Prepare sequences
-        X, y = self.prepare_sequences(df_features, labels)
-        
-        # Split data
-        from sklearn.model_selection import train_test_split
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-        
-        # Convert to tensors
-        X_train = torch.FloatTensor(X_train).to(self.device)
-        X_test = torch.FloatTensor(X_test).to(self.device)
-        y_train = torch.LongTensor(y_train).to(self.device)
-        y_test = torch.LongTensor(y_test).to(self.device)
-        
-        # Initialize model
-        input_size = X_train.shape[2]
-        self.model = MarketPatternLSTM(input_size).to(self.device)
-        
-        # Loss and optimizer
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
-        
-        # Training loop
-        best_acc = 0.0
-        train_losses = []
-        test_accs = []
-        
-        self.model.train()
-        for epoch in range(epochs):
-            epoch_loss = 0.0
-            for i in range(0, len(X_train), batch_size):
-                batch_X = X_train[i:i+batch_size]
-                batch_y = y_train[i:i+batch_size]
-                
-                optimizer.zero_grad()
-                outputs, _ = self.model(batch_X)
-                loss = criterion(outputs, batch_y)
-                loss.backward()
-                optimizer.step()
-                
-                epoch_loss += loss.item()
-            
-            # Validation
-            if epoch % 5 == 0:
-                self.model.eval()
-                with torch.no_grad():
-                    test_outputs, _ = self.model(X_test)
-                    test_loss = criterion(test_outputs, y_test)
-                    test_acc = (test_outputs.argmax(1) == y_test).float().mean()
-                
-                scheduler.step(test_loss)
-                
-                # Save best model
-                if test_acc > best_acc:
-                    best_acc = test_acc
-                    self.save_model('best_market_pattern_model.pth')
-                
-                train_losses.append(epoch_loss / (len(X_train) // batch_size))
-                test_accs.append(test_acc.item())
-                
-                logger.info(f'Epoch {epoch}: Train Loss: {epoch_loss/(len(X_train)//batch_size):.4f}, '
-                           f'Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}, Best Acc: {best_acc:.4f}')
-                self.model.train()
-        
         logger.info(f"Training completed! Best accuracy: {best_acc:.4f}")
         return train_losses, test_accs
 
@@ -478,7 +408,8 @@ class MarketPatternDetector:
             'model_state_dict': self.model.state_dict(),
             'scaler': self.scaler,
             'feature_columns': self.feature_columns,
-            'sequence_length': self.sequence_length        }, path)
+            'sequence_length': self.sequence_length
+        }, path)
     
     def load_model(self, path):
         """Load model and scaler"""
