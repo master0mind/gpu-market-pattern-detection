@@ -27,9 +27,22 @@ def main():
     print("\n📊 Loading market data...")
     df = pd.read_csv(r"C:\Users\and\Documents\1012-5M-5D.csv")
     
-    # Keep only required columns
+    # Keep required columns plus optional orderflow columns if available
     required_cols = ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']
-    df = df[required_cols].copy()
+    optional_orderflow_cols = [
+        'Delta',
+        'Cumulative delta (By volume)_Cumulative open',
+        'Cumulative delta (By volume)_Cumulative high',
+        'Cumulative delta (By volume)_Cumulative low',
+        'Cumulative delta (By volume)_Cumulative close'
+    ]
+
+    cols_to_keep = required_cols.copy()
+    for col in optional_orderflow_cols:
+        if col in df.columns:
+            cols_to_keep.append(col)
+
+    df = df[cols_to_keep].copy()
     
     # Parse data
     df = detector.parse_csv_data(df)

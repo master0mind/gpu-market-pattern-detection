@@ -42,13 +42,27 @@ def load_and_validate_data(csv_path):
     # Check required columns
     required_cols = ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']
     missing_cols = [col for col in required_cols if col not in df.columns]
-    
+
     if missing_cols:
         raise ValueError(f"Missing required columns: {missing_cols}")
-    
-    # Keep only the required columns to avoid feature mismatch
-    df = df[required_cols].copy()
-    logger.info(f"Using columns: {list(df.columns)}")
+
+    # Keep required columns plus optional orderflow columns if available
+    optional_orderflow_cols = [
+        'Delta',
+        'Cumulative delta (By volume)_Cumulative open',
+        'Cumulative delta (By volume)_Cumulative high',
+        'Cumulative delta (By volume)_Cumulative low',
+        'Cumulative delta (By volume)_Cumulative close'
+    ]
+
+    cols_to_keep = required_cols.copy()
+    for col in optional_orderflow_cols:
+        if col in df.columns:
+            cols_to_keep.append(col)
+            logger.info(f"Including orderflow column: {col}")
+
+    df = df[cols_to_keep].copy()
+    logger.info(f"Using {len(cols_to_keep)} columns: {list(df.columns)}")
     
     logger.info("Data validation passed")
     return df

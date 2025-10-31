@@ -127,7 +127,59 @@ class MarketPatternDetector:
         # Volume indicators
         data['volume_sma'] = data['Volume(from bar)'].rolling(window=10).mean()
         data['volume_ratio'] = data['Volume(from bar)'] / (data['volume_sma'] + 1e-8)
-        
+
+        # Advanced volume features
+        data['volume_momentum'] = data['Volume(from bar)'].pct_change(5)
+        data['volume_acceleration'] = data['volume_momentum'].diff()
+        data['volume_trend'] = data['Volume(from bar)'].rolling(window=5).apply(
+            lambda x: 1 if x.iloc[-1] > x.iloc[0] else (-1 if x.iloc[-1] < x.iloc[0] else 0), raw=False
+        )
+
+        # On-Balance Volume (OBV)
+        obv = (np.sign(data['Close'].diff()) * data['Volume(from bar)']).fillna(0).cumsum()
+        data['obv'] = obv
+        data['obv_sma'] = obv.rolling(window=10).mean()
+        data['obv_momentum'] = obv.pct_change(5)
+
+        # Volume-Weighted Average Price (VWAP) - approximate using rolling window
+        typical_price = (data['High'] + data['Low'] + data['Close']) / 3
+        data['vwap'] = (typical_price * data['Volume(from bar)']).rolling(window=20).sum() / data['Volume(from bar)'].rolling(window=20).sum()
+        data['vwap_distance'] = (data['Close'] - data['vwap']) / (data['vwap'] + 1e-8)
+
+        # Orderflow features (if available in data)
+        if 'Delta' in data.columns:
+            # Delta represents buying vs selling pressure
+            data['delta_sma'] = data['Delta'].rolling(window=10).mean()
+            data['delta_ratio'] = np.where(
+                data['volume_sma'] > 1e-8,
+                data['Delta'] / data['volume_sma'],
+                0
+            )
+            data['delta_momentum'] = data['Delta'].pct_change(5)
+            data['delta_cumsum'] = data['Delta'].cumsum()
+
+        # Cumulative delta features (if available)
+        cumulative_delta_cols = [
+            'Cumulative delta (By volume)_Cumulative close',
+            'Cumulative delta (By volume)_Cumulative high',
+            'Cumulative delta (By volume)_Cumulative low',
+            'Cumulative delta (By volume)_Cumulative open'
+        ]
+
+        if 'Cumulative delta (By volume)_Cumulative close' in data.columns:
+            cd_close = data['Cumulative delta (By volume)_Cumulative close']
+            data['cd_close_momentum'] = cd_close.pct_change(5)
+            data['cd_close_sma'] = cd_close.rolling(window=10).mean()
+            data['cd_close_trend'] = cd_close.diff(5)
+
+        if 'Cumulative delta (By volume)_Cumulative high' in data.columns:
+            cd_high = data['Cumulative delta (By volume)_Cumulative high']
+            data['cd_high_momentum'] = cd_high.pct_change(5)
+
+        if 'Cumulative delta (By volume)_Cumulative low' in data.columns:
+            cd_low = data['Cumulative delta (By volume)_Cumulative low']
+            data['cd_low_momentum'] = cd_low.pct_change(5)
+
         # Volatility indicators
         data['atr'] = ta.volatility.AverageTrueRange(data['High'], data['Low'], data['Close'], window=14).average_true_range()
         
@@ -144,7 +196,16 @@ class MarketPatternDetector:
         data['lower_low'] = ((data['Low'] < data['Low'].shift(1)) & (data['Low'].shift(1) < data['Low'].shift(2))).astype(int)
 
         # Validate feature creation
-        feature_cols = [col for col in data.columns if col not in ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']]
+        # Exclude raw price, volume, and orderflow columns (we use processed features instead)
+        exclude_cols_validation = [
+            'DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)',
+            'Delta',
+            'Cumulative delta (By volume)_Cumulative open',
+            'Cumulative delta (By volume)_Cumulative high',
+            'Cumulative delta (By volume)_Cumulative low',
+            'Cumulative delta (By volume)_Cumulative close'
+        ]
+        feature_cols = [col for col in data.columns if col not in exclude_cols_validation]
         logger.debug(f"Created {len(feature_cols)} technical features")
 
         # Check for problematic values
@@ -206,8 +267,16 @@ class MarketPatternDetector:
         - The first sequence_length labels (0 to sequence_length-1) are not used
         - This is correct because we need historical data to predict the current state
         """
-        # Select feature columns (exclude non-numeric and target columns)
-        exclude_cols = ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']
+        # Select feature columns (exclude non-numeric and target/raw columns)
+        # Exclude raw price, volume, and orderflow columns (we use processed features instead)
+        exclude_cols = [
+            'DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)',
+            'Delta',
+            'Cumulative delta (By volume)_Cumulative open',
+            'Cumulative delta (By volume)_Cumulative high',
+            'Cumulative delta (By volume)_Cumulative low',
+            'Cumulative delta (By volume)_Cumulative close'
+        ]
         # Use numpy dtypes for proper numeric type checking
         feature_cols = [col for col in data.columns
                        if col not in exclude_cols and np.issubdtype(data[col].dtype, np.number)]

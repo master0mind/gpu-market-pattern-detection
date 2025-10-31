@@ -26,9 +26,22 @@ def simulate_real_time_monitoring(csv_file, update_interval=5):
     # Load your market data
     df = pd.read_csv(csv_file)
     
-    # Keep only the required columns to match training data
+    # Keep required columns plus optional orderflow columns if available
     required_cols = ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']
-    df = df[required_cols].copy()
+    optional_orderflow_cols = [
+        'Delta',
+        'Cumulative delta (By volume)_Cumulative open',
+        'Cumulative delta (By volume)_Cumulative high',
+        'Cumulative delta (By volume)_Cumulative low',
+        'Cumulative delta (By volume)_Cumulative close'
+    ]
+
+    cols_to_keep = required_cols.copy()
+    for col in optional_orderflow_cols:
+        if col in df.columns:
+            cols_to_keep.append(col)
+
+    df = df[cols_to_keep].copy()
     
     df = detector.parse_csv_data(df)
     print(f"📊 Loaded {len(df)} data points from {csv_file}")
