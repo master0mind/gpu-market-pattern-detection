@@ -106,11 +106,24 @@ def timeseries_analysis(request):
                 'error': f'Target column "{target_column}" not found in data. Available columns: {list(df.columns)}',
                 'status': 'error'
             }), 400
-        
+
+        # Validate DateTime column exists
+        if 'DateTime' not in df.columns:
+            return json.dumps({
+                'error': 'DateTime column not found in data. Required for time series analysis.',
+                'status': 'error'
+            }), 400
+
         logger.info(f"Processing {len(df)} records with model: {model_type}, target: {target_column}")
 
         # Use DateTime as index and sort
-        df = df.sort_values('DateTime')
+        try:
+            df = df.sort_values('DateTime')
+        except Exception as e:
+            return json.dumps({
+                'error': f'Error sorting by DateTime: {str(e)}. Ensure DateTime column is properly formatted.',
+                'status': 'error'
+            }), 400
 
         # Perform the analysis based on the requested model type
         if model_type.lower() == 'arima':
@@ -171,9 +184,13 @@ def perform_arima_analysis(df, forecast_periods, target_column):
         model_fit = model.fit()
     except Exception as e:
         logger.warning(f"Error fitting ARIMA model with (1,1,1): {str(e)}. Trying (1,0,0).")
-        # Fallback to simpler model if complex one fails
-        model = sm.tsa.ARIMA(ts, order=(1, 0, 0))
-        model_fit = model.fit()
+        try:
+            # Fallback to simpler model if complex one fails
+            model = sm.tsa.ARIMA(ts, order=(1, 0, 0))
+            model_fit = model.fit()
+        except Exception as e2:
+            logger.error(f"Both ARIMA models failed. Error: {str(e2)}")
+            raise ValueError(f"Unable to fit ARIMA model to the data: {str(e2)}")
     
     # Generate forecast
     forecast = model_fit.forecast(steps=forecast_periods)

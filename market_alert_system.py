@@ -97,10 +97,15 @@ class MarketAlertSystem:
             csv_path = data_source['path']
             if not Path(csv_path).exists():
                 raise FileNotFoundError(f"Data file not found: {csv_path}")
-            
+
             df = pd.read_csv(csv_path)
-            # Get the last 20+ rows for pattern analysis
-            return df.tail(25)
+            # Get sufficient historical data for accurate technical indicators
+            # Need at least 50 rows: 20 for sequence_length + 20 for indicators + buffer
+            min_rows = 50
+            if len(df) < min_rows:
+                logger.warning(f"CSV has only {len(df)} rows, need at least {min_rows} for reliable predictions")
+                return df  # Return all available data
+            return df.tail(min_rows)
             
         elif data_source['type'] == 'api':
             # Fetch from API

@@ -56,17 +56,28 @@ def load_and_validate_data(csv_path):
 def visualize_training_data(df, labels):
     """Create visualizations of the training data"""
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    
+
+    # Validate data and labels alignment
+    if len(df) != len(labels):
+        logger.warning(f"Data length ({len(df)}) doesn't match labels length ({len(labels)}). Truncating to shorter length.")
+        min_len = min(len(df), len(labels))
+        df = df.iloc[:min_len]
+        labels = labels[:min_len]
+
     # Price chart with labels
     axes[0, 0].plot(df.index, df['Close'], label='Close Price', alpha=0.7)
     extreme_high = np.where(labels == 1)[0]
     extreme_low = np.where(labels == 2)[0]
-    
+
+    # Filter indices to ensure they're within bounds
+    extreme_high = extreme_high[extreme_high < len(df)]
+    extreme_low = extreme_low[extreme_low < len(df)]
+
     if len(extreme_high) > 0:
-        axes[0, 0].scatter(extreme_high, df.iloc[extreme_high]['Close'], 
+        axes[0, 0].scatter(extreme_high, df.iloc[extreme_high]['Close'],
                           color='red', s=50, label='Extreme High', alpha=0.8)
     if len(extreme_low) > 0:
-        axes[0, 0].scatter(extreme_low, df.iloc[extreme_low]['Close'], 
+        axes[0, 0].scatter(extreme_low, df.iloc[extreme_low]['Close'],
                           color='green', s=50, label='Extreme Low', alpha=0.8)
     
     axes[0, 0].set_title('Price Chart with Extreme Labels')

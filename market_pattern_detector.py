@@ -149,11 +149,15 @@ class MarketPatternDetector:
         
         for i in range(lookback, len(df) - lookback):
             current_close = df.iloc[i]['Close']
-            
+
+            # Skip if current_close is zero or too small (avoid division by zero)
+            if abs(current_close) < 1e-8:
+                continue
+
             # Look at future prices to identify reversals
             future_prices = df.iloc[i+1:i+lookback+1]['Close']
             past_prices = df.iloc[i-lookback:i]['Close']
-            
+
             # Calculate percentage moves
             max_future_move = (future_prices.max() - current_close) / current_close * 100
             min_future_move = (future_prices.min() - current_close) / current_close * 100
@@ -171,26 +175,36 @@ class MarketPatternDetector:
     def prepare_sequences(self, data, labels=None):
         """
         Prepare sequences for LSTM training/prediction
+
+        Note: Sequences start from index sequence_length. This means:
+        - sequence[0] uses data[0:sequence_length] and targets label[sequence_length]
+        - The first sequence_length labels (0 to sequence_length-1) are not used
+        - This is correct because we need historical data to predict the current state
         """
         # Select feature columns (exclude non-numeric and target columns)
         exclude_cols = ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']
         feature_cols = [col for col in data.columns if col not in exclude_cols and data[col].dtype in ['float64', 'int64']]
-        
+
         # Handle missing values
         data_clean = data[feature_cols].ffill().fillna(0)
-        
+
         # Store feature columns for later use
         self.feature_columns = feature_cols
-        
+
         # Scale features
         if not hasattr(self.scaler, 'scale_'):
             data_scaled = self.scaler.fit_transform(data_clean)
         else:
             data_scaled = self.scaler.transform(data_clean)
-          # Create sequences
+
+        # Validate labels alignment if provided
+        if labels is not None and len(labels) != len(data_scaled):
+            raise ValueError(f"Labels length ({len(labels)}) must match data length ({len(data_scaled)})")
+
+        # Create sequences
         sequences = []
         targets = []
-        
+
         for i in range(self.sequence_length, len(data_scaled)):
             sequences.append(data_scaled[i-self.sequence_length:i])
             if labels is not None:
@@ -226,9 +240,17 @@ class MarketPatternDetector:
         """
         # Prepare sequences
         X, y = self.prepare_sequences(df_features, labels)
-        
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+        # Check if we have enough samples for stratification
+        unique, counts = np.unique(y, return_counts=True)
+        min_samples = counts.min()
+
+        # Split data - only use stratify if we have enough samples of each class
+        if min_samples >= 2:
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+        else:
+            logger.warning(f"Insufficient samples for stratification (min class has {min_samples} samples). Using random split.")
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
         # Convert to tensors
         X_train = torch.FloatTensor(X_train).to(self.device)
