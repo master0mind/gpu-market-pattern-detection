@@ -80,9 +80,15 @@ class MarketPatternDetector:
         for col in required_cols:
             if col not in df.columns:
                 raise ValueError(f"Required column '{col}' not found in data")
-        
+
+        # Validate sufficient data for indicators
+        if len(df) < 20:
+            raise ValueError(f"Need at least 20 data points for technical indicators, got {len(df)}")
+
         # Create a copy to avoid modifying original data
         data = df.copy()
+
+        logger.debug(f"Creating technical features from {len(data)} rows of data")
         
         # Basic price features
         data['price_range'] = data['High'] - data['Low']
@@ -110,7 +116,13 @@ class MarketPatternDetector:
         data['bb_upper'] = bb.bollinger_hband()
         data['bb_lower'] = bb.bollinger_lband()
         data['bb_middle'] = bb.bollinger_mavg()
-        data['bb_position'] = (data['Close'] - data['bb_lower']) / (data['bb_upper'] - data['bb_lower'])
+        # Calculate bb_position with protection against division by zero
+        bb_range = data['bb_upper'] - data['bb_lower']
+        data['bb_position'] = np.where(
+            bb_range > 1e-8,
+            (data['Close'] - data['bb_lower']) / bb_range,
+            0.5  # Default to middle position when bands collapse
+        )
 
         # Volume indicators
         data['volume_sma'] = data['Volume(from bar)'].rolling(window=10).mean()
@@ -123,14 +135,27 @@ class MarketPatternDetector:
         for period in [3, 5, 10]:
             data[f'momentum_{period}'] = data['Close'].pct_change(period)
         
-        # Support/Resistance levels
-        data['local_high'] = data['High'].rolling(window=5, center=True).max() == data['High']
-        data['local_low'] = data['Low'].rolling(window=5, center=True).min() == data['Low']
-        
-        # Market structure
-        data['higher_high'] = (data['High'] > data['High'].shift(1)) & (data['High'].shift(1) > data['High'].shift(2))
-        data['lower_low'] = (data['Low'] < data['Low'].shift(1)) & (data['Low'].shift(1) < data['Low'].shift(2))
-        
+        # Support/Resistance levels (convert boolean to int for model compatibility)
+        data['local_high'] = (data['High'].rolling(window=5, center=True).max() == data['High']).astype(int)
+        data['local_low'] = (data['Low'].rolling(window=5, center=True).min() == data['Low']).astype(int)
+
+        # Market structure (convert boolean to int for model compatibility)
+        data['higher_high'] = ((data['High'] > data['High'].shift(1)) & (data['High'].shift(1) > data['High'].shift(2))).astype(int)
+        data['lower_low'] = ((data['Low'] < data['Low'].shift(1)) & (data['Low'].shift(1) < data['Low'].shift(2))).astype(int)
+
+        # Validate feature creation
+        feature_cols = [col for col in data.columns if col not in ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']]
+        logger.debug(f"Created {len(feature_cols)} technical features")
+
+        # Check for problematic values
+        for col in feature_cols:
+            null_count = data[col].isnull().sum()
+            inf_count = np.isinf(data[col]).sum() if np.issubdtype(data[col].dtype, np.number) else 0
+            if null_count > 0:
+                logger.warning(f"Feature '{col}' has {null_count} NaN values")
+            if inf_count > 0:
+                logger.warning(f"Feature '{col}' has {inf_count} Inf values")
+
         return data
     
     def label_extremes(self, df, lookback=10, threshold=0.5):
@@ -183,10 +208,24 @@ class MarketPatternDetector:
         """
         # Select feature columns (exclude non-numeric and target columns)
         exclude_cols = ['DateTime', 'Open', 'High', 'Low', 'Close', 'Volume(from bar)']
-        feature_cols = [col for col in data.columns if col not in exclude_cols and data[col].dtype in ['float64', 'int64']]
+        # Use numpy dtypes for proper numeric type checking
+        feature_cols = [col for col in data.columns
+                       if col not in exclude_cols and np.issubdtype(data[col].dtype, np.number)]
+
+        # Validate that we have features
+        if len(feature_cols) == 0:
+            raise ValueError("No numeric features found in data after feature creation")
 
         # Handle missing values
         data_clean = data[feature_cols].ffill().fillna(0)
+
+        # Check for any remaining NaN or Inf values
+        if data_clean.isnull().any().any():
+            logger.warning("NaN values found after fillna, replacing with 0")
+            data_clean = data_clean.fillna(0)
+        if np.isinf(data_clean.values).any():
+            logger.warning("Inf values found in features, replacing with large finite values")
+            data_clean = data_clean.replace([np.inf, -np.inf], [1e10, -1e10])
 
         # Store feature columns for later use
         self.feature_columns = feature_cols
