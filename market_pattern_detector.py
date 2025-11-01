@@ -131,15 +131,15 @@ class MarketPatternDetector:
         # Advanced volume features
         data['volume_momentum'] = data['Volume(from bar)'].pct_change(5)
         data['volume_acceleration'] = data['volume_momentum'].diff()
-        data['volume_trend'] = data['Volume(from bar)'].rolling(window=5).apply(
-            lambda x: 1 if x.iloc[-1] > x.iloc[0] else (-1 if x.iloc[-1] < x.iloc[0] else 0), raw=False
-        )
+        # Volume trend: compare current volume to 5 periods ago
+        data['volume_trend'] = np.sign(data['Volume(from bar)'].diff(5))
 
         # On-Balance Volume (OBV)
         obv = (np.sign(data['Close'].diff()) * data['Volume(from bar)']).fillna(0).cumsum()
         data['obv'] = obv
         data['obv_sma'] = obv.rolling(window=10).mean()
-        data['obv_momentum'] = obv.pct_change(5)
+        # OBV slope: difference over 5 periods (not pct_change on cumulative!)
+        data['obv_slope'] = obv.diff(5)
 
         # Volume-Weighted Average Price (VWAP) - approximate using rolling window
         typical_price = (data['High'] + data['Low'] + data['Close']) / 3
@@ -150,35 +150,32 @@ class MarketPatternDetector:
         if 'Delta' in data.columns:
             # Delta represents buying vs selling pressure
             data['delta_sma'] = data['Delta'].rolling(window=10).mean()
+            # Delta ratio: normalize by actual volume, not volume SMA
             data['delta_ratio'] = np.where(
-                data['volume_sma'] > 1e-8,
-                data['Delta'] / data['volume_sma'],
+                data['Volume(from bar)'] > 1e-8,
+                data['Delta'] / data['Volume(from bar)'],
                 0
             )
-            data['delta_momentum'] = data['Delta'].pct_change(5)
-            data['delta_cumsum'] = data['Delta'].cumsum()
+            # Delta momentum: rate of change
+            data['delta_momentum'] = data['Delta'].diff(5)
+            # Delta acceleration
+            data['delta_acceleration'] = data['delta_momentum'].diff()
 
         # Cumulative delta features (if available)
-        cumulative_delta_cols = [
-            'Cumulative delta (By volume)_Cumulative close',
-            'Cumulative delta (By volume)_Cumulative high',
-            'Cumulative delta (By volume)_Cumulative low',
-            'Cumulative delta (By volume)_Cumulative open'
-        ]
-
+        # Note: These are already cumulative, so use diff() not pct_change()
         if 'Cumulative delta (By volume)_Cumulative close' in data.columns:
             cd_close = data['Cumulative delta (By volume)_Cumulative close']
-            data['cd_close_momentum'] = cd_close.pct_change(5)
+            data['cd_close_change'] = cd_close.diff(5)  # Rate of change (not pct_change!)
             data['cd_close_sma'] = cd_close.rolling(window=10).mean()
-            data['cd_close_trend'] = cd_close.diff(5)
+            data['cd_close_divergence'] = cd_close - data['cd_close_sma']
 
         if 'Cumulative delta (By volume)_Cumulative high' in data.columns:
             cd_high = data['Cumulative delta (By volume)_Cumulative high']
-            data['cd_high_momentum'] = cd_high.pct_change(5)
+            data['cd_high_change'] = cd_high.diff(5)  # Rate of change (not pct_change!)
 
         if 'Cumulative delta (By volume)_Cumulative low' in data.columns:
             cd_low = data['Cumulative delta (By volume)_Cumulative low']
-            data['cd_low_momentum'] = cd_low.pct_change(5)
+            data['cd_low_change'] = cd_low.diff(5)  # Rate of change (not pct_change!)
 
         # Volatility indicators
         data['atr'] = ta.volatility.AverageTrueRange(data['High'], data['Low'], data['Close'], window=14).average_true_range()
